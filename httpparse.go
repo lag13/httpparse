@@ -18,26 +18,19 @@ func contains(xs []int, y int) bool {
 	return false
 }
 
-// RawBody takes a response, the error returned from sending the http
-// request that resulted in the response, and a list of expected
-// status codes. It returns the response body as a []byte and an error
-// if something goes wrong (like status codes were not what was
-// expected). It was created to consolidate the logic of checking that
-// the response code is what we expect, closing the response, etc...
-func RawBody(resp *http.Response, requestErr error, wantStatuses []int, readLimit ...int64) (body []byte, err error) {
-	if requestErr != nil {
-		return nil, fmt.Errorf("sending request: %v", requestErr)
-	}
+// RawBody returns the raw http body as a []byte and errors if
+// anything goes wrong. It also closes the response body.
+func RawBody(resp *http.Response, wantStatuses []int, readLimit ...int64) (body []byte, err error) {
 	// From what I've gathered, checking an error returned from
-	// closing a resource that you only read from (like an HTTP
+	// closing a resource that you only read from (like a HTTP
 	// response body) never yields an actionable error:
 	// https://github.com/kisielk/errcheck/issues/55#issuecomment-68296619,
 	// https://groups.google.com/d/msg/Golang-Nuts/7Ek7Uo7vSqU/0UfsWpIFQ_YJ,
 	// https://www.reddit.com/r/golang/comments/3735so/do_we_have_to_check_for_errors_when_we_call_close/.
 	// The documentation on net/http also does not check this
-	// error: https://golang.org/pkg/net/http/. Since this is the
-	// case it feels like the response body should not satisfy the
-	// io.ReadCloser interface, oh well.
+	// error: https://golang.org/pkg/net/http/. If checking the
+	// error is not useful it kind of feels like it shouldn't even
+	// return an error, oh well.
 	defer resp.Body.Close()
 	// People say that using ioutil.ReadAll() is not ideal
 	// (https://www.reddit.com/r/golang/comments/2cdu7s/how_do_i_avoid_using_ioutilreadall/,
@@ -50,12 +43,9 @@ func RawBody(resp *http.Response, requestErr error, wantStatuses []int, readLimi
 	// responses from APIs that return JSON where we need access
 	// to the raw data (like if you wanted to cache it somewhere)
 	// and in my experience those APIs never return large amounts
-	// of data. I also feel it is useful to have the "raw" data in
-	// case something goes wrong with the JSON parsing because
-	// then you can see the data that the parsing failed on. Just
-	// in case though I am limiting the amount of data that can be
-	// read. The default limit (30 MB) is arbitrary and can be
-	// changed if desired.
+	// of data. Just in case though I am limiting the amount of
+	// data that can be read. The default limit (30 MB) is
+	// arbitrary and can be changed if desired.
 	maxBytes := int64(1 << 20 * 30)
 	if len(readLimit) > 0 {
 		maxBytes = readLimit[0]
@@ -81,18 +71,16 @@ func RawBody(resp *http.Response, requestErr error, wantStatuses []int, readLimi
 	return body, nil
 }
 
-// JSON checks parses a http response who's body contains JSON. Most
-// of this logic revolves around trying to produce nice helpful error
-// messages. For example, if the response status code is unexpected
-// then you can't possibly know how to unmarshal that response body so
-// we try to read part of the response body and return that as part of
-// the error so there is context. But reading the response can fail,
-// or we might not read ALL of the response, etc... and we just want a
-// nice clear error message for all those cases.
-func JSON(resp *http.Response, requestErr error, wantStatuses []int, v interface{}) error {
-	if requestErr != nil {
-		return fmt.Errorf("sending request: %v", requestErr)
-	}
+// JSON parses a http response who's body contains JSON and closes the
+// response body. Most of the logic revolves around trying to produce
+// helpful error messages. For example, if the response status code is
+// unexpected then you can't possibly know how to unmarshal that
+// response body so we try to read part of the response body and
+// return that as part of the error to provide context. But reading
+// the response can fail, or we might not read ALL of the response,
+// etc... and we just want a nice clear error message for all those
+// cases.
+func JSON(resp *http.Response, wantStatuses []int, v interface{}) error {
 	defer resp.Body.Close()
 	if got, wants := resp.StatusCode, wantStatuses; !contains(wants, got) {
 		maxBytes := int64(1 << 20)
