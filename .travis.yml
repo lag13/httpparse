@@ -1,0 +1,7 @@
+language: go
+go_import_path: github.com/lag13/httpparse
+go:
+  - 1.9.x
+
+script:
+  - go test -v ./...
