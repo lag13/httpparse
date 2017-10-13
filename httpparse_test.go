@@ -36,27 +36,16 @@ func TestGetRawBody(t *testing.T) {
 	tests := []struct {
 		testScenario   string
 		resp           *http.Response
-		reqErr         error
 		expectStatuses []int
 		readLimit      int64
 		wantBody       string
 		wantErr        string
 	}{
 		{
-			testScenario:   "there was an error when sending the request",
-			resp:           nil,
-			reqErr:         errors.New("unexpected error with sending request"),
-			expectStatuses: nil,
-			readLimit:      0,
-			wantBody:       "",
-			wantErr:        "sending request: unexpected error with sending request",
-		},
-		{
 			testScenario: "there was an error when reading the response body",
 			resp: &http.Response{
 				Body: errReadCloser{readErr: errors.New("some read err")},
 			},
-			reqErr:         nil,
 			expectStatuses: nil,
 			readLimit:      0,
 			wantBody:       "",
@@ -68,7 +57,6 @@ func TestGetRawBody(t *testing.T) {
 				StatusCode: 999,
 				Body:       ioutil.NopCloser(strings.NewReader("woa there")),
 			},
-			reqErr:         nil,
 			expectStatuses: []int{200},
 			readLimit:      0,
 			wantBody:       "",
@@ -80,7 +68,6 @@ func TestGetRawBody(t *testing.T) {
 				StatusCode: 999,
 				Body:       ioutil.NopCloser(strings.NewReader("woa there")),
 			},
-			reqErr:         nil,
 			expectStatuses: []int{200, 888},
 			readLimit:      0,
 			wantBody:       "",
@@ -92,7 +79,6 @@ func TestGetRawBody(t *testing.T) {
 				StatusCode: 400,
 				Body:       ioutil.NopCloser(strings.NewReader("a reeaaaallllly loooooooong responnnnnnssssseeeeee bodyyyyyyyy")),
 			},
-			reqErr:         nil,
 			expectStatuses: []int{400},
 			readLimit:      19,
 			wantBody:       "",
@@ -104,7 +90,6 @@ func TestGetRawBody(t *testing.T) {
 				StatusCode: 400,
 				Body:       ioutil.NopCloser(strings.NewReader("hello there buddy")),
 			},
-			reqErr:         nil,
 			expectStatuses: []int{400},
 			readLimit:      0,
 			wantBody:       "hello there buddy",
@@ -120,9 +105,9 @@ func TestGetRawBody(t *testing.T) {
 		var body []byte
 		var err error
 		if test.readLimit == 0 {
-			body, err = httpparse.RawBody(test.resp, test.reqErr, test.expectStatuses)
+			body, err = httpparse.RawBody(test.resp, test.expectStatuses)
 		} else {
-			body, err = httpparse.RawBody(test.resp, test.reqErr, test.expectStatuses, test.readLimit)
+			body, err = httpparse.RawBody(test.resp, test.expectStatuses, test.readLimit)
 		}
 
 		if test.wantErr == "" && err != nil {
@@ -148,28 +133,17 @@ func TestParseJSONResponse(t *testing.T) {
 	tests := []struct {
 		testScenario   string
 		resp           *http.Response
-		reqErr         error
 		expectStatuses []int
 		readLimit      int64
 		wantData       structuredJSON
 		wantErr        string
 	}{
 		{
-			testScenario:   "there was an error when sending the request",
-			resp:           nil,
-			reqErr:         errors.New("unexpected error with sending request"),
-			expectStatuses: nil,
-			readLimit:      0,
-			wantData:       structuredJSON{},
-			wantErr:        "sending request: unexpected error with sending request",
-		},
-		{
 			testScenario: "the response status code was unexpected",
 			resp: &http.Response{
 				StatusCode: 999,
 				Body:       ioutil.NopCloser(strings.NewReader("woa there")),
 			},
-			reqErr:         nil,
 			expectStatuses: []int{200},
 			readLimit:      0,
 			wantData:       structuredJSON{},
@@ -181,7 +155,6 @@ func TestParseJSONResponse(t *testing.T) {
 				StatusCode: 999,
 				Body:       ioutil.NopCloser(strings.NewReader("woa there")),
 			},
-			reqErr:         nil,
 			expectStatuses: []int{200, 888},
 			readLimit:      0,
 			wantData:       structuredJSON{},
@@ -193,7 +166,6 @@ func TestParseJSONResponse(t *testing.T) {
 				StatusCode: 999,
 				Body:       errReadCloser{readErr: errors.New("some read err")},
 			},
-			reqErr:         nil,
 			expectStatuses: []int{200},
 			readLimit:      0,
 			wantData:       structuredJSON{},
@@ -205,7 +177,6 @@ func TestParseJSONResponse(t *testing.T) {
 				StatusCode: 999,
 				Body:       ioutil.NopCloser(strings.NewReader(strings.Repeat("z", 1<<20+1))),
 			},
-			reqErr:         nil,
 			expectStatuses: []int{200},
 			readLimit:      0,
 			wantData:       structuredJSON{},
@@ -217,7 +188,6 @@ func TestParseJSONResponse(t *testing.T) {
 				StatusCode: 400,
 				Body:       ioutil.NopCloser(strings.NewReader(`lats`)),
 			},
-			reqErr:         nil,
 			expectStatuses: []int{400},
 			readLimit:      0,
 			wantData:       structuredJSON{},
@@ -229,7 +199,6 @@ func TestParseJSONResponse(t *testing.T) {
 				StatusCode: 400,
 				Body:       ioutil.NopCloser(strings.NewReader(`{"value_one":"hello there", "value_two":42}`)),
 			},
-			reqErr:         nil,
 			expectStatuses: []int{400},
 			readLimit:      0,
 			wantData: structuredJSON{
@@ -246,7 +215,7 @@ func TestParseJSONResponse(t *testing.T) {
 		}
 
 		var data structuredJSON
-		err := httpparse.JSON(test.resp, test.reqErr, test.expectStatuses, &data)
+		err := httpparse.JSON(test.resp, test.expectStatuses, &data)
 
 		if test.wantErr == "" && err != nil {
 			errorMsg("got a non-nil error: %v", err)
