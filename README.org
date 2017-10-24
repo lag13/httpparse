@@ -1,2 +1,0 @@
-* httpparse
-Utilities for parsing http responses.

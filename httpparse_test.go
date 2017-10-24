@@ -34,7 +34,7 @@ func (e errReadCloser) Close() error {
 // the body and returns any expected errors.
 func TestGetRawBody(t *testing.T) {
 	tests := []struct {
-		testScenario   string
+		name           string
 		resp           *http.Response
 		expectStatuses []int
 		readLimit      int64
@@ -42,7 +42,7 @@ func TestGetRawBody(t *testing.T) {
 		wantErr        string
 	}{
 		{
-			testScenario: "there was an error when reading the response body",
+			name: "error reading response body",
 			resp: &http.Response{
 				Body: errReadCloser{readErr: errors.New("some read err")},
 			},
@@ -52,7 +52,7 @@ func TestGetRawBody(t *testing.T) {
 			wantErr:        "reading response body: some read err",
 		},
 		{
-			testScenario: "the response status code was unexpected",
+			name: "unexpected response status code",
 			resp: &http.Response{
 				StatusCode: 999,
 				Body:       ioutil.NopCloser(strings.NewReader("woa there")),
@@ -63,7 +63,7 @@ func TestGetRawBody(t *testing.T) {
 			wantErr:        "got status code 999 but wanted 200, body: woa there",
 		},
 		{
-			testScenario: "the response status code was unexpected (when expecting multiple status codes)",
+			name: "unexpected status code when expecting multiple status codes",
 			resp: &http.Response{
 				StatusCode: 999,
 				Body:       ioutil.NopCloser(strings.NewReader("woa there")),
@@ -74,7 +74,7 @@ func TestGetRawBody(t *testing.T) {
 			wantErr:        "got status code 999 but wanted one of [200 888], body: woa there",
 		},
 		{
-			testScenario: "the response body exceeded the limit so an error is returned",
+			name: "response body exceeded the limit",
 			resp: &http.Response{
 				StatusCode: 400,
 				Body:       ioutil.NopCloser(strings.NewReader("a reeaaaallllly loooooooong responnnnnnssssseeeeee bodyyyyyyyy")),
@@ -85,7 +85,7 @@ func TestGetRawBody(t *testing.T) {
 			wantErr:        "ioutil.ReadAll() is used to read the response body and we limit how much it can read because nothing is infinite. The response body contained more than the limit of 19 bytes. Either increase the limit or parse the response body another way",
 		},
 		{
-			testScenario: "the raw response body is returned",
+			name: "returned raw response body",
 			resp: &http.Response{
 				StatusCode: 400,
 				Body:       ioutil.NopCloser(strings.NewReader("hello there buddy")),
@@ -96,28 +96,25 @@ func TestGetRawBody(t *testing.T) {
 			wantErr:        "",
 		},
 	}
-	for i, test := range tests {
-		errorMsg := func(str string, args ...interface{}) {
-			t.Helper()
-			t.Errorf("Running test %d, where %s:\n"+str, append([]interface{}{i, test.testScenario}, args...)...)
-		}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var body []byte
+			var err error
+			if test.readLimit == 0 {
+				body, err = httpparse.RawBody(test.resp, test.expectStatuses)
+			} else {
+				body, err = httpparse.RawBody(test.resp, test.expectStatuses, test.readLimit)
+			}
 
-		var body []byte
-		var err error
-		if test.readLimit == 0 {
-			body, err = httpparse.RawBody(test.resp, test.expectStatuses)
-		} else {
-			body, err = httpparse.RawBody(test.resp, test.expectStatuses, test.readLimit)
-		}
-
-		if test.wantErr == "" && err != nil {
-			errorMsg("got a non-nil error: %v", err)
-		} else if got, want := fmt.Sprintf("%v", err), test.wantErr; want != "" && !strings.Contains(got, want) {
-			errorMsg("got error message: %s, wanted message to contain the string: %s", got, want)
-		}
-		if got, want := string(body), test.wantBody; got != want {
-			errorMsg("got body\n  %s\nwanted\n  %s", got, want)
-		}
+			if test.wantErr == "" && err != nil {
+				t.Errorf("got a non-nil error: %v", err)
+			} else if got, want := fmt.Sprintf("%v", err), test.wantErr; want != "" && !strings.Contains(got, want) {
+				t.Errorf("got error message: %s, wanted message to contain the string: %s", got, want)
+			}
+			if got, want := string(body), test.wantBody; got != want {
+				t.Errorf("got body\n  %s\nwanted\n  %s", got, want)
+			}
+		})
 	}
 }
 
@@ -131,76 +128,65 @@ type structuredJSON struct {
 // unmarshals the raw JSON into the provided value.
 func TestParseJSONResponse(t *testing.T) {
 	tests := []struct {
-		testScenario   string
-		resp           *http.Response
-		expectStatuses []int
-		readLimit      int64
-		wantData       structuredJSON
-		wantErr        string
+		name         string
+		resp         *http.Response
+		expectStatus int
+		readLimit    int64
+		wantData     structuredJSON
+		wantErr      string
 	}{
 		{
-			testScenario: "the response status code was unexpected",
+			name: "unexpected response status code",
 			resp: &http.Response{
 				StatusCode: 999,
 				Body:       ioutil.NopCloser(strings.NewReader("woa there")),
 			},
-			expectStatuses: []int{200},
-			readLimit:      0,
-			wantData:       structuredJSON{},
-			wantErr:        "got status code 999 but wanted 200",
+			expectStatus: 200,
+			readLimit:    0,
+			wantData:     structuredJSON{},
+			wantErr:      "got status code 999 but wanted 200, body: woa there",
 		},
 		{
-			testScenario: "the response status code was unexpected (when expecting multiple status codes)",
-			resp: &http.Response{
-				StatusCode: 999,
-				Body:       ioutil.NopCloser(strings.NewReader("woa there")),
-			},
-			expectStatuses: []int{200, 888},
-			readLimit:      0,
-			wantData:       structuredJSON{},
-			wantErr:        "got status code 999 but wanted one of [200 888], body: woa there",
-		},
-		{
-			testScenario: "the response status code was unexpected and there was an error when reading the response body",
+			name: "unexpected response status code and error reading response body",
 			resp: &http.Response{
 				StatusCode: 999,
 				Body:       errReadCloser{readErr: errors.New("some read err")},
 			},
-			expectStatuses: []int{200},
-			readLimit:      0,
-			wantData:       structuredJSON{},
-			wantErr:        "got status code 999 but wanted 200, also an error occurred when reading the response body: some read err",
+			expectStatus: 200,
+			readLimit:    0,
+			wantData:     structuredJSON{},
+			wantErr:      "got status code 999 but wanted 200, also an error occurred when reading the response body: some read err",
 		},
 		{
-			testScenario: "the response status code was unexpected and there was more response body that we didn't read",
+			name: "unexpected response status code did not read all of response body",
 			resp: &http.Response{
 				StatusCode: 999,
 				Body:       ioutil.NopCloser(strings.NewReader(strings.Repeat("z", 1<<20+1))),
 			},
-			expectStatuses: []int{200},
-			readLimit:      0,
-			wantData:       structuredJSON{},
-			wantErr:        "got status code 999 but wanted 200, the first 1048576 bytes of the response body are: zzz",
+			expectStatus: 200,
+			readLimit:    0,
+			wantData:     structuredJSON{},
+			wantErr:      "got status code 999 but wanted 200, the first 1048576 bytes of the response body are: zzz",
 		},
 		{
-			testScenario: "we get an error when unmarshalling the data",
+			name: "error when unmarshalling response body",
 			resp: &http.Response{
 				StatusCode: 400,
 				Body:       ioutil.NopCloser(strings.NewReader(`lats`)),
 			},
-			expectStatuses: []int{400},
-			readLimit:      0,
-			wantData:       structuredJSON{},
-			wantErr:        "unmarshalling response body: invalid character 'l'",
+			expectStatus: 400,
+			readLimit:    0,
+			wantData:     structuredJSON{},
+			wantErr:      "unmarshalling response body: invalid character 'l'",
 		},
 		{
-			testScenario: "we get the structured data and no error",
+			name: "got the structured data",
 			resp: &http.Response{
 				StatusCode: 400,
 				Body:       ioutil.NopCloser(strings.NewReader(`{"value_one":"hello there", "value_two":42}`)),
 			},
-			expectStatuses: []int{400},
-			readLimit:      0,
+			expectStatus: 400,
+			readLimit:    0,
 			wantData: structuredJSON{
 				ValueOne: "hello there",
 				ValueTwo: 42,
@@ -208,22 +194,19 @@ func TestParseJSONResponse(t *testing.T) {
 			wantErr: "",
 		},
 	}
-	for i, test := range tests {
-		errorMsg := func(str string, args ...interface{}) {
-			t.Helper()
-			t.Errorf("Running test %d, where %s:\n"+str, append([]interface{}{i, test.testScenario}, args...)...)
-		}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var data structuredJSON
+			err := httpparse.JSON(test.resp, test.expectStatus, &data)
 
-		var data structuredJSON
-		err := httpparse.JSON(test.resp, test.expectStatuses, &data)
-
-		if test.wantErr == "" && err != nil {
-			errorMsg("got a non-nil error: %v", err)
-		} else if got, want := fmt.Sprintf("%v", err), test.wantErr; want != "" && !strings.Contains(got, want) {
-			errorMsg("got error message: %s, wanted message to contain the string: %s", got, want)
-		}
-		if got, want := data, test.wantData; got != want {
-			errorMsg("got data %+v, wanted %+v", got, want)
-		}
+			if test.wantErr == "" && err != nil {
+				t.Errorf("got a non-nil error: %v", err)
+			} else if got, want := fmt.Sprintf("%v", err), test.wantErr; want != "" && !strings.Contains(got, want) {
+				t.Errorf("got error message: %s, wanted message to contain the string: %s", got, want)
+			}
+			if got, want := data, test.wantData; got != want {
+				t.Errorf("got data %+v, wanted %+v", got, want)
+			}
+		})
 	}
 }

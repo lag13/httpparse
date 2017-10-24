@@ -1,4 +1,21 @@
-// Package httpparse contains utilities for parsing http responses.
+/*
+
+Package httpparse provides utilities for parsing http responses.
+
+Motivation
+
+Parsing a http response into some sort of data structure (or even just
+pulling out the raw body) follows a very repetitive pattern of:
+
+	1. defer'ring closing the response body.
+	2. checking that we got the expected status code.
+	3. reading and parsing the response body.
+	4. generating error messages if any of these things fail.
+
+It's not much logic but I've repeated it enough to want an abstraction
+and even if this package is not used it serves as a nice reference.
+
+*/
 package httpparse
 
 import (
@@ -73,26 +90,17 @@ func RawBody(resp *http.Response, wantStatuses []int, readLimit ...int64) (body 
 
 // JSON parses a http response who's body contains JSON and closes the
 // response body. Most of the logic revolves around trying to produce
-// helpful error messages. For example, if the response status code is
-// unexpected then you can't possibly know how to unmarshal that
-// response body so we try to read part of the response body and
-// return that as part of the error to provide context. But reading
-// the response can fail, or we might not read ALL of the response,
-// etc... and we just want a nice clear error message for all those
-// cases.
-func JSON(resp *http.Response, wantStatuses []int, v interface{}) error {
+// clear error messages when edge cases are hit.
+func JSON(resp *http.Response, wantStatus int, v interface{}) error {
 	defer resp.Body.Close()
-	if got, wants := resp.StatusCode, wantStatuses; !contains(wants, got) {
+	if got, want := resp.StatusCode, wantStatus; got != want {
 		maxBytes := int64(1 << 20)
 		limitedReader := &io.LimitedReader{
 			R: resp.Body,
 			N: maxBytes + 1,
 		}
+		err := fmt.Errorf("got status code %d but wanted %d", got, want)
 		body, readErr := ioutil.ReadAll(limitedReader)
-		err := fmt.Errorf("got status code %d but wanted one of %v", got, wants)
-		if len(wants) == 1 {
-			err = fmt.Errorf("got status code %d but wanted %d", got, wants[0])
-		}
 		if readErr != nil {
 			return fmt.Errorf("%v, also an error occurred when reading the response body: %v", err, readErr)
 		}
